@@ -287,6 +287,31 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   .stack-title { font-size: 14px; font-weight: 700; margin: 26px 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-2); }
 
+  /* ── Recomendación por zona ─────────────────────────── */
+  .reco-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .reco-card {
+    border: 1px solid var(--line);
+    border-left: 5px solid var(--accent);
+    background: var(--paper);
+    padding: 16px 18px;
+  }
+  .reco-card.op-ALTA  { border-left-color: var(--accent); }
+  .reco-card.op-MEDIA { border-left-color: var(--amber); }
+  .reco-card.op-BAJA  { border-left-color: var(--accent-2); }
+  .reco-card .zona { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--slate); }
+  .reco-card .accion { font-size: 19px; font-weight: 800; color: var(--ink); margin: 6px 0 4px; }
+  .reco-card .accion .tipo-hl { color: var(--accent); }
+  .reco-card .detalle { font-size: 13px; color: var(--slate); font-family: 'Spline Sans Mono','Consolas',monospace; }
+  .reco-card.op-BAJA .accion .tipo-hl { color: var(--accent-2); }
+  .reco-card .nada { font-size: 14px; color: var(--accent-2); font-weight: 600; }
+
+  /* ── Heatmap ────────────────────────────────────────── */
+  #heatTable td.heat-cell { text-align: center; padding: 8px 6px; position: relative; min-width: 92px; }
+  #heatTable td.heat-cell .hpct { font-family: 'Spline Sans Mono','Consolas',monospace; font-weight: 700; font-size: 14px; display: block; }
+  #heatTable td.heat-cell .hfree { font-size: 10.5px; opacity: .75; display: block; margin-top: 2px; }
+  #heatTable td.heat-zona { text-align: left; font-weight: 600; background: var(--paper-2); position: sticky; left: 0; }
+  #heatTable td.heat-empty { text-align: center; color: var(--line); }
+
   footer { text-align: center; padding: 30px; color: var(--slate); font-size: 12px; border-top: 1px solid var(--line); }
 
   .toast {
@@ -465,6 +490,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <div class="stack-title" style="margin-top:0">Capacidad declarada vs real por tipo</div>
         <div class="chart-wrap"><canvas id="tipoChart"></canvas></div>
       </div>
+    </div>
+
+    <div class="panel" style="margin-top:24px">
+      <div class="stack-title" style="margin-top:0">¿Qué densificar en cada zona?</div>
+      <p class="block-desc" style="margin-bottom:16px">Para cada zona (área) de esta bodega, el tipo de bin con mayor capacidad libre y baja ocupación — el candidato prioritario a densificar.</p>
+      <div id="recoZona"></div>
+    </div>
+
+    <div class="panel" style="margin-top:24px">
+      <div class="stack-title" style="margin-top:0">Mapa de calor · ocupación por zona y tipo</div>
+      <p class="block-desc" style="margin-bottom:16px">Cada celda muestra el % de ocupación volumétrica. Más rojo = más vacío = mayor oportunidad de densificar. El número pequeño es la capacidad libre (m³).</p>
+      <div class="table-scroll" style="max-height:440px"><table id="heatTable"></table></div>
     </div>
 
     <div class="panel" style="margin-top:24px">
@@ -852,6 +889,92 @@ function renderBodegaDetail(bodega){
   }
   oh+='</tbody>';
   document.getElementById('opTable').innerHTML = oh;
+
+  renderRecoZona(rows);
+  renderHeatmap(rows);
+}
+
+// ── Recomendación: qué densificar en cada zona ──
+function renderRecoZona(rows){
+  const zonas = [...new Set(rows.map(r=>r.area))];
+  // Para cada zona, agregamos por tipo y elegimos el de mayor capacidad libre con ocupación < 60%
+  const cards = [];
+  for(const z of zonas){
+    const zr = rows.filter(r=>r.area===z);
+    const porTipo = agg(zr, ['tipo']).filter(o=>o.capDecl>0);
+    porTipo.forEach(o=>o.tipoDesc=TIPO_DESC[o.tipo]||('Tipo '+o.tipo));
+    // candidatos densificables: ocupación < 60% Y al menos 1 m³ libre real (evita ruido de zonas con 1 bin)
+    const cand = porTipo.filter(o=>o.pctVol<0.60 && o.capLibre>=1).sort((a,b)=>b.capLibre-a.capLibre);
+    const capLibreZona = porTipo.reduce((s,o)=>s+o.capLibre,0);
+    if(cand.length){
+      const top = cand[0];
+      cards.push({ zona:z, top, capLibreZona, op:top.oportunidad });
+    } else {
+      cards.push({ zona:z, top:null, capLibreZona, op:'BAJA' });
+    }
+  }
+  // ordenar tarjetas por capacidad libre del candidato (las de mayor oportunidad primero)
+  cards.sort((a,b)=> (b.top?b.top.capLibre:0) - (a.top?a.top.capLibre:0));
+
+  let html = '<div class="reco-grid">';
+  for(const c of cards){
+    if(c.top){
+      html += `<div class="reco-card op-${c.op}">
+        <div class="zona">${c.zona}</div>
+        <div class="accion">Densifica el <span class="tipo-hl">tipo ${c.top.tipo}</span> · ${c.top.tipoDesc}</div>
+        <div class="detalle">${num(c.top.capLibre)} m³ libres · ${pct(c.top.pctVol)} ocupado · ${int(c.top.binsVac)} bins vacíos</div>
+      </div>`;
+    } else {
+      html += `<div class="reco-card op-BAJA">
+        <div class="zona">${c.zona}</div>
+        <div class="accion nada">Sin oportunidad clara</div>
+        <div class="detalle">Todos los tipos &gt; 60% de ocupación</div>
+      </div>`;
+    }
+  }
+  html += '</div>';
+  document.getElementById('recoZona').innerHTML = html;
+}
+
+// ── Mapa de calor zona × tipo ──
+function renderHeatmap(rows){
+  const zonas = [...new Set(rows.map(r=>r.area))];
+  const tipos = [...new Set(rows.map(r=>r.tipo))].sort((a,b)=>a-b);
+  // celda = agregación zona+tipo
+  const cellMap = new Map();
+  agg(rows,['area','tipo']).forEach(o=>cellMap.set(o.area+'||'+o.tipo, o));
+
+  // color según % ocupación: 0% = rojo (densificar), 100% = verde
+  function heatColor(pct){
+    // interpolar rojo(214,...) -> ámbar -> verde con tonos Melonn suaves
+    // 0 -> #f7d9d0 (rojo claro), 0.5 -> #fdeccb (ámbar), 1 -> #d2f7e8 (verde)
+    let r,g,b;
+    if(pct<0.5){ const t=pct/0.5; r=Math.round(247+(253-247)*t); g=Math.round(217+(236-217)*t); b=Math.round(208+(203-208)*t); }
+    else { const t=(pct-0.5)/0.5; r=Math.round(253+(210-253)*t); g=Math.round(236+(247-236)*t); b=Math.round(203+(232-203)*t); }
+    return `rgb(${r},${g},${b})`;
+  }
+  function textColor(pct){ return pct<0.30 ? '#8a2be2' : (pct<0.60 ? '#9a5b00' : '#018a52'); }
+
+  let html = '<thead><tr><th>Zona \\ Tipo</th>';
+  for(const t of tipos){ html += `<th style="text-align:center">${t}<br><span style="font-weight:400;opacity:.7">${(TIPO_DESC[t]||'').split(' ')[0]}</span></th>`; }
+  html += '</tr></thead><tbody>';
+  for(const z of zonas){
+    html += `<tr><td class="heat-zona">${z}</td>`;
+    for(const t of tipos){
+      const o = cellMap.get(z+'||'+t);
+      if(!o || o.capDecl<=0){
+        html += '<td class="heat-empty">—</td>';
+      } else {
+        html += `<td class="heat-cell" style="background:${heatColor(o.pctVol)}">
+          <span class="hpct" style="color:${textColor(o.pctVol)}">${pct(o.pctVol)}</span>
+          <span class="hfree">${num(o.capLibre,0)} m³ libres</span>
+        </td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  document.getElementById('heatTable').innerHTML = html;
 }
 
 // ════════════════════════════════════════════════════════════════════
