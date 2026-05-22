@@ -443,12 +443,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 <!-- Dashboard -->
 <main id="dashboard" class="hidden">
 
-  <!-- SECTION: KPIs -->
-  <section>
-    <div class="section-label">Resumen de la red</div>
-    <div class="kpis" id="kpiRow"></div>
-  </section>
-
   <!-- SECTION: Panorama por bodega -->
   <section>
     <div class="section-label">Panorama</div>
@@ -704,29 +698,10 @@ function render(){
   document.getElementById('dashboard').classList.remove('hidden');
 
   const rows = STATE.rows;
-  const capDecl = rows.reduce((s,r)=>s+r.capTotal,0);
-  const capReal = rows.reduce((s,r)=>s+r.capReal,0);
-  const capLibre = capDecl-capReal;
 
   const rank = agg(rows, ['bodega','area','tipo']).filter(o=>o.capDecl>0)
                  .sort((a,b)=>b.capLibre-a.capLibre);
   rank.forEach(o=>o.tipoDesc=TIPO_DESC[o.tipo]||('Tipo '+o.tipo));
-  const capLibreAlta = rank.filter(o=>o.oportunidad==='ALTA').reduce((s,o)=>s+o.capLibre,0);
-  const nAlta = rank.filter(o=>o.oportunidad==='ALTA').length;
-
-  // ── KPIs ──
-  const kpis = [
-    {label:'Capacidad declarada', val:int(capDecl), unit:'m³', cls:''},
-    {label:'Ocupación real', val:int(capReal), unit:'m³', cls:'k-green'},
-    {label:'Capacidad libre', val:int(capLibre), unit:'m³', cls:'k-accent'},
-    {label:'% Ocupación real', val:pct(capReal/capDecl), unit:'', cls:'k-amber'},
-    {label:'m³ libres oport. ALTA', val:int(capLibreAlta), unit:'m³', cls:'k-accent'},
-  ];
-  document.getElementById('kpiRow').innerHTML = kpis.map(k=>`
-    <div class="kpi ${k.cls}">
-      <div class="label">${k.label}</div>
-      <div class="value">${k.val} <span class="unit">${k.unit}</span></div>
-    </div>`).join('');
 
   renderPanorama(rank);
   renderRank(rank);
